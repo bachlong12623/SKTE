@@ -1,5 +1,7 @@
 package com.app.skte;
 
+import static java.lang.Thread.sleep;
+
 import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
@@ -42,10 +44,32 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String lastUpdate = prefs.getString(KEY_LAST_UPDATE, "");
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
 
+        if (!today.equals(lastUpdate)) {
+            todayEnergy = 0;
+            SharedPreferences.Editor editor = prefs.edit();
+            editor.putString(KEY_LAST_UPDATE, today);
+            editor.putInt(KEY_TODAY_ENERGY, todayEnergy);
+            editor.apply();
+        } else {
+            todayEnergy = prefs.getInt(KEY_TODAY_ENERGY, 0);
+        }
+
+
+        // Initialize the database helper
+        databaseHelper = new DatabaseHelper(this);
+        try {
+            databaseHelper.createDatabase();
+        } catch (IOException e) {
+            throw new RuntimeException("Error creating database", e);
+        }
         if (!isUserDataAvailable()) {
             Intent intent = new Intent(this, UserInputActivity.class);
-            startActivity(intent);
+//            startActivity(intent);
+            startActivityForResult(intent, 1);
         } else if (isFirstOpenToday()) {
 //        }else {
             Intent intent = new Intent(this, UserInputActivity.class);
@@ -88,35 +112,28 @@ public class MainActivity extends AppCompatActivity {
 
 
 
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        String lastUpdate = prefs.getString(KEY_LAST_UPDATE, "");
-        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
 
-        if (!today.equals(lastUpdate)) {
-            todayEnergy = 0;
-            SharedPreferences.Editor editor = prefs.edit();
-            editor.putString(KEY_LAST_UPDATE, today);
-            editor.putInt(KEY_TODAY_ENERGY, todayEnergy);
-            editor.apply();
-        } else {
-            todayEnergy = prefs.getInt(KEY_TODAY_ENERGY, 0);
-        }
-        Button btnAddSnack = findViewById(R.id.btnAddSnack);
-        Button btnAddMeal = findViewById(R.id.btnAddMeal);
-
-        // Initialize the database helper
-        databaseHelper = new DatabaseHelper(this);
-        try {
-            databaseHelper.createDatabase();
-        } catch (IOException e) {
-            throw new RuntimeException("Error creating database", e);
-        }
 
         Button addSnackButton = findViewById(R.id.btnAddSnack);
         Button addMealButton = findViewById(R.id.btnAddMeal);
 
         addSnackButton.setOnClickListener(v -> showDialog(this, "snack"));
         addMealButton.setOnClickListener(v -> showDialog(this, "meal"));
+
+
+        btnChangeState.setOnClickListener(v -> {
+            Intent intent = new Intent(MainActivity.this, UserInputActivity.class);
+            intent.putExtra("name", (String) getUserData("name"));
+            intent.putExtra("day", (Integer) getUserData("day"));
+            intent.putExtra("month", (Integer) getUserData("month"));
+            intent.putExtra("year", (Integer) getUserData("year"));
+            intent.putExtra("height", (String) getUserData("height"));
+            intent.putExtra("weight", (String) getUserData("weight"));
+            intent.putExtra("healthStatus", (String) getUserData("healthStatus"));
+            intent.putExtra("gender", (String) getUserData("gender"));
+            startActivityForResult(intent, 1);
+        });
+
         displayUserData();
 
 
@@ -149,8 +166,7 @@ public class MainActivity extends AppCompatActivity {
                         editor.putInt(KEY_TODAY_ENERGY, todayEnergy);
                         editor.apply();
                         Toast.makeText(context, "Added " + energy + " energy. Total: " + todayEnergy, Toast.LENGTH_SHORT).show();
-                        TextView todayEnergyTextView = findViewById(R.id.tvTodaysEnergyConsumption);
-
+                        displayUserData();
                     });
                 } else {
                     Log.e("MainActivity", "Column 'energy' not found in the cursor");
@@ -238,6 +254,7 @@ public class MainActivity extends AppCompatActivity {
         editor.putInt("salt", sharedPreferences.getInt("salt", 0) + salt);
         editor.putInt("sugar", sharedPreferences.getInt("sugar", 0) + sugar);
         editor.apply();
+        displayUserData();
     }
 
     private Object getUserData(String key) {
@@ -269,10 +286,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private double calculateBMI(double height, double weight) {
-        // Convert height from cm to meters
-        height = height / 100;
-        return weight / (height * height);
-    }
+    // Convert height from cm to meters
+    height = height / 100;
+    double bmi = weight / (height * height);
+    return Double.parseDouble(String.format(Locale.US, "%.1f", bmi));
+}
 
     private void displayUserData() {
         SharedPreferences sharedPreferences = getSharedPreferences("UserData", MODE_PRIVATE);
@@ -312,8 +330,6 @@ public class MainActivity extends AppCompatActivity {
             activity = databaseHelper.get_activity_girl();
             diet = databaseHelper.get_diet_girl();
             energy = databaseHelper.get_energy_boy();
-            growth = databaseHelper.get_growth_data_girl();
-
         }
 
         recommendedDiet = getRecommendedDiet(diet, age, bmi_status);
@@ -321,22 +337,22 @@ public class MainActivity extends AppCompatActivity {
         recommendEnergy = getRecommendedEnergy(energy, age, bmi_status);
         recommendWater = getRecommendedWater(age);
         todaysEnergyConsumption = getTodaysEnergyConsumption();
-        warningHighCalorieDiet = getWarningHighCalorieDiet();
+        warningHighCalorieDiet = getWarningHighCalorieDiet(recommendEnergy, bmi);
 
         try {
-            tvName.setText("Name: " + name);
-            tvAge.setText("Age: " + age / 12);
-            tvHeight.setText("Height: " + height);
-            tvWeight.setText("Weight: " + weight);
+            tvName.setText("Tên: " + name);
+            tvAge.setText("Tuổi: " + age / 12);
+            tvHeight.setText("Chiều cao: " + height + " cm");
+            tvWeight.setText("Cân nặng: " + weight+ " kg");
             tvBMI.setText("BMI: " + bmi);
-            tvStatus.setText("Status: " + healthStatus);
-            tvGender.setText("Gender: " + gender);
-            tvRecommendedDiet.setText("Recommended Diet: " + recommendedDiet);
-            tvExercise.setText("Exercise: " + exercise);
-            tvRecommendEnergy.setText("Recommend Energy: " + recommendEnergy);
-            tvRecommendWater.setText("Recommend Water: " + recommendWater);
-            tvTodaysEnergyConsumption.setText("Today's Energy Consumption: " + todaysEnergyConsumption);
-            tvWarningHighCalorieDiet.setText("Warning: " + warningHighCalorieDiet);
+            tvStatus.setText("Trạng thái: " + healthStatus);
+            tvGender.setText("Giới tính: " + gender);
+            tvRecommendedDiet.setText("Bữa ăn khuyến nghị: " + recommendedDiet);
+            tvExercise.setText("Hooạt động thể chất: " + exercise);
+            tvRecommendEnergy.setText("Năng lượng khuyến nghị: " + recommendEnergy + " kcal/ngày");
+            tvRecommendWater.setText("Lượn nước khuyến nghị: " + recommendWater+ " ml/ngày");
+            tvTodaysEnergyConsumption.setText("Năng lượng tiêu thụ: " + todaysEnergyConsumption+ " kcal");
+            tvWarningHighCalorieDiet.setText("Cảnh báo: " + warningHighCalorieDiet);
         } catch (Exception e) {
             Log.e("MainActivity", "Error displaying user data: " + e.getMessage());
         }
@@ -451,36 +467,35 @@ public class MainActivity extends AppCompatActivity {
     return prefs.getInt(KEY_TODAY_ENERGY, 0);
 }
 
-    private String getWarningHighCalorieDiet() {
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        int todayEnergy = prefs.getInt(KEY_TODAY_ENERGY, 0);
-        String recommendEnergyText = tvRecommendEnergy.getText().toString();
+    private String getWarningHighCalorieDiet(String todaysEnergyConsumption, double bmi) {
+    SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+    int todayEnergy = prefs.getInt(KEY_TODAY_ENERGY, 0);
+    String recommendEnergyText = tvRecommendEnergy.getText().toString();
+    String warning = "";
+    // Check if the string contains the expected delimiter
+    Log.d("MainActivity", "Recommend energy text: " + recommendEnergyText);
+    String[] parts = todaysEnergyConsumption.split("-");
+    if (parts.length == 2) {
+        int min = Integer.parseInt(parts[0].trim());
+        int max = Integer.parseInt(parts[1].trim());
 
-        // Check if the string contains the expected delimiter
-        if (recommendEnergyText.contains(":")) {
-            String[] splitText = recommendEnergyText.split(":");
-            if (splitText.length > 1) {
-                String energyRange = splitText[1].trim();
-                String[] parts = energyRange.split("-");
-
-                if (parts.length == 2) {
-                    int min = Integer.parseInt(parts[0].trim());
-                    int max = Integer.parseInt(parts[1].trim());
-
-                    if (todayEnergy < min || todayEnergy > max) {
-                        return "Warning: High Calorie Diet";
-                    }
-                } else {
-                    Log.e("MainActivity", "Unexpected format for energy range: " + energyRange);
-                }
-            } else {
-                Log.e("MainActivity", "Unexpected format for recommended energy: " + recommendEnergyText);
-            }
-        } else {
-            Log.e("MainActivity", "Delimiter ':' not found in recommended energy text: " + recommendEnergyText);
+        if (todayEnergy > max) {
+            warning += "Bạn đã tiêu thụ năng lượng nhiều hơn khuyến nghị!\n";
+        } else if (todayEnergy < min) {
+            warning += "Bạn đã tiêu thụ năng lượng ít hơn khuyến nghị!\n";
         }
-        return "";
+    } else {
+        Log.e("MainActivity", "Unexpected format for energy range: " + todaysEnergyConsumption);
     }
+
+    if (bmi >= 25) {
+        warning += "Cảnh báo: Bạn có chỉ số BMI cao!";
+    } else if (bmi < 18.5) {
+        warning += "Cảnh báo: Bạn có chỉ số BMI thấp!";
+    }
+
+    return warning;
+}
 
 
 }
