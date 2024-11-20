@@ -481,6 +481,14 @@ public class MainActivity extends AppCompatActivity {
 
         if (todayEnergy > max) {
             warning += "Bạn đã tiêu thụ năng lượng nhiều hơn khuyến nghị!\n";
+
+            // Show alert dialog when the activity is loaded
+            new AlertDialog.Builder(this)
+                    .setTitle("Cảnh báo")
+                    .setMessage(warning)
+                    .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    })
+                    .show();
         } else if (todayEnergy < min) {
             warning += "Bạn đã tiêu thụ năng lượng ít hơn khuyến nghị!\n";
         }
